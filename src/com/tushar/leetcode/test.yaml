@@ -1,41 +1,231 @@
-{{- if .Values.autoscaling.enabled }}
-apiVersion: autoscaling/v2
-kind: HorizontalPodAutoscaler
-metadata:
-  name: {{ include "openvscode-server.fullname" . }}
-  namespace: {{ include "openvscode-server.namespace" . }}
-  labels:
-    {{- include "openvscode-server.labels" . | nindent 4 }}
-spec:
-  scaleTargetRef:
-    apiVersion: apps/v1
-    kind: Deployment
-    name: {{ include "openvscode-server.fullname" . }}
-  minReplicas: {{ .Values.autoscaling.minReplicas }}
-  maxReplicas: {{ .Values.autoscaling.maxReplicas }}
+# Default values for openvscode-server
+# This is a YAML-formatted file.
+
+# Tenant identification
+tenant:
+  name: "default-tenant"
+  namespace: "openvscode"
+
+# Image configuration
+image:
+  repository: "your-registry/openvscode-server"
+  tag: "latest"
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+# Service Account
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+# Replicas and scaling
+replicaCount: 2
+
+# Horizontal Pod Autoscaler configuration
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  
+  # Option 1: Use the new metrics array format (recommended for v2 API)
   metrics:
-  {{- if .Values.autoscaling.metrics }}
-  {{- toYaml .Values.autoscaling.metrics | nindent 2 }}
-  {{- else }}
-  {{- if .Values.autoscaling.targetCPUUtilizationPercentage }}
-  - type: Resource
-    resource:
-      name: cpu
-      target:
-        type: Utilization
-        averageUtilization: {{ .Values.autoscaling.targetCPUUtilizationPercentage }}
-  {{- end }}
-  {{- if .Values.autoscaling.targetMemoryUtilizationPercentage }}
-  - type: Resource
-    resource:
-      name: memory
-      target:
-        type: Utilization
-        averageUtilization: {{ .Values.autoscaling.targetMemoryUtilizationPercentage }}
-  {{- end }}
-  {{- end }}
-  {{- if .Values.autoscaling.behavior }}
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+  
+  # Option 2: Use legacy format (will be converted to metrics array by template)
+  # Comment out the metrics array above and uncomment these if you prefer:
+  # targetCPUUtilizationPercentage: 70
+  # targetMemoryUtilizationPercentage: 80
+  
+  # Optional: Scaling behavior (v2 API feature)
   behavior:
-    {{- toYaml .Values.autoscaling.behavior | nindent 4 }}
-  {{- end }}
-{{- end }}
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 50
+          periodSeconds: 15
+        - type: Pods
+          value: 2
+          periodSeconds: 15
+      selectPolicy: Min
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 15
+        - type: Pods
+          value: 4
+          periodSeconds: 15
+      selectPolicy: Max
+
+# Resource limits
+resources:
+  limits:
+    cpu: 2000m
+    memory: 4Gi
+  requests:
+    cpu: 500m
+    memory: 1Gi
+
+# Node selector and affinity
+nodeSelector: {}
+
+tolerations: []
+
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+    - weight: 100
+      podAffinityTerm:
+        labelSelector:
+          matchExpressions:
+          - key: app
+            operator: In
+            values:
+            - openvscode-server
+        topologyKey: kubernetes.io/hostname
+
+# Service configuration
+service:
+  type: ClusterIP
+  port: 3000
+  targetPort: 3000
+  annotations: {}
+
+# Ingress configuration
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/websocket-services: "openvscode-server"
+  hosts:
+    - host: "vscode.example.com"
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: openvscode-tls
+      hosts:
+        - "vscode.example.com"
+
+# Persistent Volume Claim
+persistence:
+  enabled: true
+  storageClassName: "standard"
+  accessMode: ReadWriteMany
+  size: 50Gi
+  annotations: {}
+  # If you need separate PVCs per user, set this to false
+  # and handle user workspaces differently
+  shared: true
+
+# OpenVSCode specific configuration
+openvscode:
+  # Connection token for authentication
+  connectionToken: ""
+  # Enable connection token from secret
+  connectionTokenFromSecret:
+    enabled: true
+    secretName: "openvscode-token"
+    key: "token"
+  
+  # Environment variables
+  extraEnv:
+    - name: OPENVSCODE_SERVER_ROOT
+      value: "/home/workspace"
+    - name: DEFAULT_WORKSPACE
+      value: "/home/workspace"
+  
+  # Additional arguments for openvscode-server
+  extraArgs:
+    - "--host=0.0.0.0"
+    - "--port=3000"
+    - "--without-connection-token"  # Remove this if using token auth
+  
+  # Extensions to pre-install
+  extensions:
+    - "ms-python.python"
+    - "ms-toolsai.jupyter"
+  
+  # User settings (settings.json)
+  userSettings: |
+    {
+      "workbench.colorTheme": "Default Dark+",
+      "python.defaultInterpreterPath": "/usr/bin/python3",
+      "jupyter.askForKernelRestart": false
+    }
+
+# ConfigMap for custom configurations
+config:
+  enabled: true
+  data: {}
+
+# Secret for sensitive data
+secret:
+  enabled: true
+  data: {}
+
+# Security Context
+podSecurityContext:
+  fsGroup: 1000
+  runAsUser: 1000
+  runAsNonRoot: true
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+    - ALL
+  readOnlyRootFilesystem: false
+  runAsNonRoot: true
+  runAsUser: 1000
+
+# Probes
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: 3000
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /healthz
+    port: 3000
+  initialDelaySeconds: 10
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+# Pod disruption budget
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+# Labels and annotations
+labels: {}
+annotations: {}
+
+# Pod labels and annotations
+podLabels: {}
+podAnnotations: {}
