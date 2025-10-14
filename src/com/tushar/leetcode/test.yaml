@@ -1,126 +1,36 @@
-apiVersion: apps/v1
-kind: Deployment
+{{- if .Values.persistence.enabled }}
+{{- if not .Values.persistence.existingClaim }}
+apiVersion: v1
+kind: PersistentVolumeClaim
 metadata:
-  name: {{ include "openvscode-server.fullname" . }}
-  namespace: {{ .Values.tenant.namespace }}
+  name: {{ include "openvscode-server.fullname" . }}-pvc
+  namespace: {{ .Release.Namespace }}
   labels:
     {{- include "openvscode-server.labels" . | nindent 4 }}
-    tenant: {{ .Values.tenant.name }}
-  {{- with .Values.annotations }}
+  {{- with .Values.persistence.annotations }}
   annotations:
     {{- toYaml . | nindent 4 }}
   {{- end }}
 spec:
-  {{- if not .Values.autoscaling.enabled }}
-  replicas: {{ .Values.replicaCount }}
+  {{- if .Values.persistence.accessModes }}
+  accessModes:
+    {{- toYaml .Values.persistence.accessModes | nindent 4 }}
+  {{- else if .Values.persistence.accessMode }}
+  accessModes:
+    - {{ .Values.persistence.accessMode }}
+  {{- else }}
+  accessModes:
+    - ReadWriteOnce
   {{- end }}
+  {{- if .Values.persistence.storageClassName }}
+  storageClassName: {{ .Values.persistence.storageClassName | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.size }}
+  {{- with .Values.persistence.selector }}
   selector:
-    matchLabels:
-      {{- include "openvscode-server.selectorLabels" . | nindent 6 }}
-      tenant: {{ .Values.tenant.name }}
-  template:
-    metadata:
-      annotations:
-        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
-        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
-      {{- with .Values.podAnnotations }}
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
-      labels:
-        {{- include "openvscode-server.selectorLabels" . | nindent 8 }}
-        tenant: {{ .Values.tenant.name }}
-      {{- with .Values.podLabels }}
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
-    spec:
-      {{- with .Values.imagePullSecrets }}
-      imagePullSecrets:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
-      serviceAccountName: {{ include "openvscode-server.serviceAccountName" . }}
-      securityContext:
-        {{- toYaml .Values.podSecurityContext | nindent 8 }}
-      containers:
-      - name: openvscode-server
-        securityContext:
-          {{- toYaml .Values.securityContext | nindent 10 }}
-        image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
-        imagePullPolicy: {{ .Values.image.pullPolicy }}
-        ports:
-        - name: http
-          containerPort: {{ .Values.service.targetPort }}
-          protocol: TCP
-        env:
-        {{- if .Values.openvscode.connectionTokenFromSecret.enabled }}
-        - name: CONNECTION_TOKEN
-          valueFrom:
-            secretKeyRef:
-              name: {{ .Values.openvscode.connectionTokenFromSecret.secretName }}
-              key: {{ .Values.openvscode.connectionTokenFromSecret.key }}
-        {{- else if .Values.openvscode.connectionToken }}
-        - name: CONNECTION_TOKEN
-          value: {{ .Values.openvscode.connectionToken | quote }}
-        {{- end }}
-        {{- with .Values.openvscode.extraEnv }}
-        {{- toYaml . | nindent 8 }}
-        {{- end }}
-        args:
-        {{- range .Values.openvscode.extraArgs }}
-        - {{ . | quote }}
-        {{- end }}
-        resources:
-          {{- toYaml .Values.resources | nindent 10 }}
-        volumeMounts:
-        - name: workspace
-          mountPath: /home/workspace
-        {{- if .Values.config.enabled }}
-        - name: config
-          mountPath: /home/.openvscode-server/data/Machine
-          subPath: settings.json
-        {{- end }}
-        {{- if .Values.openvscode.userSettings }}
-        - name: user-settings
-          mountPath: /home/.openvscode-server/data/User
-        {{- end }}
-        livenessProbe:
-          {{- toYaml .Values.livenessProbe | nindent 10 }}
-        readinessProbe:
-          {{- toYaml .Values.readinessProbe | nindent 10 }}
-      volumes:
-      - name: workspace
-        {{- if .Values.persistence.enabled }}
-        {{- if .Values.persistence.existingClaim }}
-        persistentVolumeClaim:
-          claimName: {{ .Values.persistence.existingClaim }}
-        {{- else }}
-        persistentVolumeClaim:
-          claimName: {{ include "openvscode-server.fullname" . }}-pvc
-        {{- end }}
-        {{- else }}
-        emptyDir: {}
-        {{- end }}
-      {{- if .Values.config.enabled }}
-      - name: config
-        configMap:
-          name: {{ include "openvscode-server.fullname" . }}-config
-      {{- end }}
-      {{- if .Values.openvscode.userSettings }}
-      - name: user-settings
-        configMap:
-          name: {{ include "openvscode-server.fullname" . }}-user-settings
-          items:
-          - key: settings.json
-            path: settings.json
-      {{- end }}
-      {{- with .Values.nodeSelector }}
-      nodeSelector:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
-      {{- with .Values.affinity }}
-      affinity:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
-      {{- with .Values.tolerations }}
-      tolerations:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- end }}
+{{- end }}
