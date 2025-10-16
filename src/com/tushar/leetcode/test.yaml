@@ -1,97 +1,45 @@
-{{/*
-Expand the name of the chart.
-*/}}
-{{- define "openvscode-server.name" -}}
-{{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" }}
-{{- end }}
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 
-{{/*
-Create a default fully qualified app name.
-*/}}
-{{- define "openvscode-server.fullname" -}}
-{{- if .Values.fullnameOverride }}
-{{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" }}
-{{- else }}
-{{- $name := default .Chart.Name .Values.nameOverride }}
-{{- if contains $name .Release.Name }}
-{{- .Release.Name | trunc 63 | trimSuffix "-" }}
-{{- else }}
-{{- printf "%s-%s" .Release.Name $name | trunc 63 | trimSuffix "-" }}
-{{- end }}
-{{- end }}
-{{- end }}
+def send_user_email(user_email, user_df, smtp_server, smtp_port, smtp_user, smtp_password):
+    """
+    Sends an email to a user with their project combinations in tabular format.
+    
+    Parameters:
+        user_email (str): Recipient email address
+        user_df (pd.DataFrame): DataFrame with columns ['editor', 'kernel', 'project_name']
+        smtp_server (str): SMTP server address
+        smtp_port (int): SMTP port
+        smtp_user (str): SMTP login username
+        smtp_password (str): SMTP login password
+    """
+    # Convert DataFrame to HTML table
+    html_table = user_df.to_html(index=False, escape=False)
+    
+    # Create message container
+    msg = MIMEMultipart('alternative')
+    msg['Subject'] = "Your Project Combinations"
+    msg['From'] = smtp_user
+    msg['To'] = user_email
 
-{{/*
-Create chart name and version as used by the chart label.
-*/}}
-{{- define "openvscode-server.chart" -}}
-{{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" }}
-{{- end }}
+    # Create the HTML body
+    html_body = f"""
+    <html>
+      <body>
+        <p>Hi {user_email},</p>
+        <p>Here are your unique project combinations:</p>
+        {html_table}
+        <p>Best regards,<br>Your Team</p>
+      </body>
+    </html>
+    """
 
-{{/*
-Common labels
-*/}}
-{{- define "openvscode-server.labels" -}}
-helm.sh/chart: {{ include "openvscode-server.chart" . }}
-{{ include "openvscode-server.selectorLabels" . }}
-{{- if .Chart.AppVersion }}
-app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
-{{- end }}
-app.kubernetes.io/managed-by: {{ .Release.Service }}
-{{- if .Values.tenant }}
-{{- if .Values.tenant.name }}
-tenant: {{ .Values.tenant.name }}
-{{- end }}
-{{- end }}
-{{- with .Values.commonLabels }}
-{{ toYaml . }}
-{{- end }}
-{{- end }}
+    msg.attach(MIMEText(html_body, 'html'))
 
-{{/*
-Selector labels
-*/}}
-{{- define "openvscode-server.selectorLabels" -}}
-app.kubernetes.io/name: {{ include "openvscode-server.name" . }}
-app.kubernetes.io/instance: {{ .Release.Name }}
-{{- end }}
+    # Send email via SMTP
+    with smtplib.SMTP_SSL(smtp_server, smtp_port) as server:
+        server.login(smtp_user, smtp_password)
+        server.sendmail(smtp_user, user_email, msg.as_string())
 
-{{/*
-Create the name of the service account to use
-*/}}
-{{- define "openvscode-server.serviceAccountName" -}}
-{{- if .Values.serviceAccount.create }}
-{{- default (include "openvscode-server.fullname" .) .Values.serviceAccount.name }}
-{{- else }}
-{{- default "default" .Values.serviceAccount.name }}
-{{- end }}
-{{- end }}
-
-{{/*
-Return the proper image name
-*/}}
-{{- define "openvscode-server.image" -}}
-{{- $registryName := .Values.image.registry -}}
-{{- $repositoryName := .Values.image.repository -}}
-{{- $tag := .Values.image.tag | toString -}}
-{{- if $registryName }}
-{{- printf "%s/%s:%s" $registryName $repositoryName $tag -}}
-{{- else }}
-{{- printf "%s:%s" $repositoryName $tag -}}
-{{- end }}
-{{- end }}
-
-{{/*
-Return the namespace
-*/}}
-{{- define "openvscode-server.namespace" -}}
-{{- if .Values.tenant }}
-{{- if .Values.tenant.namespace }}
-{{- .Values.tenant.namespace }}
-{{- else }}
-{{- .Release.Namespace }}
-{{- end }}
-{{- else }}
-{{- .Release.Namespace }}
-{{- end }}
-{{- end }}
+    print(f"Email sent to {user_email} successfully!")
