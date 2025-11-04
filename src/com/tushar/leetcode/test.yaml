@@ -1,45 +1,30 @@
-import smtplib
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
-
-def send_user_email(user_email, user_df, smtp_server, smtp_port, smtp_user, smtp_password):
-    """
-    Sends an email to a user with their project combinations in tabular format.
-    
-    Parameters:
-        user_email (str): Recipient email address
-        user_df (pd.DataFrame): DataFrame with columns ['editor', 'kernel', 'project_name']
-        smtp_server (str): SMTP server address
-        smtp_port (int): SMTP port
-        smtp_user (str): SMTP login username
-        smtp_password (str): SMTP login password
-    """
-    # Convert DataFrame to HTML table
-    html_table = user_df.to_html(index=False, escape=False)
-    
-    # Create message container
-    msg = MIMEMultipart('alternative')
-    msg['Subject'] = "Your Project Combinations"
-    msg['From'] = smtp_user
-    msg['To'] = user_email
-
-    # Create the HTML body
-    html_body = f"""
-    <html>
-      <body>
-        <p>Hi {user_email},</p>
-        <p>Here are your unique project combinations:</p>
-        {html_table}
-        <p>Best regards,<br>Your Team</p>
-      </body>
-    </html>
-    """
-
-    msg.attach(MIMEText(html_body, 'html'))
-
-    # Send email via SMTP
-    with smtplib.SMTP_SSL(smtp_server, smtp_port) as server:
-        server.login(smtp_user, smtp_password)
-        server.sendmail(smtp_user, user_email, msg.as_string())
-
-    print(f"Email sent to {user_email} successfully!")
+{{- if .Values.configMap }}
+{{- if .Values.configMap.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "openvscode-server.fullname" . }}-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "openvscode-server.labels" . | nindent 4 }}
+data:
+  {{- with .Values.configMap.data }}
+  {{- toYaml . | nindent 2 }}
+  {{- end }}
+{{- end }}
+{{- end }}
+---
+{{- if .Values.openvscode }}
+{{- if .Values.openvscode.userSettings }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "openvscode-server.fullname" . }}-user-settings
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "openvscode-server.labels" . | nindent 4 }}
+data:
+  settings.json: |
+    {{- .Values.openvscode.userSettings | nindent 4 }}
+{{- end }}
+{{- end }}
