@@ -1,30 +1,40 @@
-{{- if .Values.configMap }}
-{{- if .Values.configMap.enabled }}
+{{- if .Values.secret }}
+{{- if .Values.secret.enabled }}
 apiVersion: v1
-kind: ConfigMap
+kind: Secret
 metadata:
-  name: {{ include "openvscode-server.fullname" . }}-config
+  name: {{ include "openvscode-server.fullname" . }}-secret
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "openvscode-server.labels" . | nindent 4 }}
+type: Opaque
 data:
-  {{- with .Values.configMap.data }}
-  {{- toYaml . | nindent 2 }}
+  {{- with .Values.secret.data }}
+  {{- range $key, $value := . }}
+  {{ $key }}: {{ $value | b64enc | quote }}
+  {{- end }}
   {{- end }}
 {{- end }}
 {{- end }}
 ---
 {{- if .Values.openvscode }}
-{{- if .Values.openvscode.userSettings }}
+{{- if .Values.openvscode.connectionTokenFromSecret }}
+{{- if .Values.openvscode.connectionTokenFromSecret.enabled }}
 apiVersion: v1
-kind: ConfigMap
+kind: Secret
 metadata:
-  name: {{ include "openvscode-server.fullname" . }}-user-settings
+  name: {{ .Values.openvscode.connectionTokenFromSecret.secretName }}
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "openvscode-server.labels" . | nindent 4 }}
+type: Opaque
 data:
-  settings.json: |
-    {{- .Values.openvscode.userSettings | nindent 4 }}
+  {{- if .Values.openvscode.connectionToken }}
+  {{ .Values.openvscode.connectionTokenFromSecret.key }}: {{ .Values.openvscode.connectionToken | b64enc | quote }}
+  {{- else }}
+  # Generate a random token if not provided
+  {{ .Values.openvscode.connectionTokenFromSecret.key }}: {{ randAlphaNum 32 | b64enc | quote }}
+  {{- end }}
+{{- end }}
 {{- end }}
 {{- end }}
