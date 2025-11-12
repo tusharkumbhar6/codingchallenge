@@ -1,73 +1,16 @@
-image:
-  repository: registry.my-company.com/dev/openvscode-server
-  tag: "1.0.0"
-  pullPolicy: IfNotPresent
+{{- define "openvscode-server.name" -}}
+{{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" -}}
+{{- end }}
 
-replicaCount: 1
-
-nameOverride: ""
-fullnameOverride: ""
-
-serviceAccount:
-  create: true
-  name: ""
-  annotations: {}
-
-podAnnotations: {}
-podLabels: {}
-
-securityContext:
-  fsGroup: 1000
-  runAsUser: 1000
-  runAsGroup: 1000
-
-resources:
-  requests:
-    cpu: "250m"
-    memory: "1Gi"
-  limits:
-    cpu: "2"
-    memory: "4Gi"
-
-service:
-  type: ClusterIP
-  port: 3000         # OpenVSCode default
-
-ingress:
-  enabled: true
-  className: nginx
-  annotations: {}
-  hosts:
-    - host: "openvscode.example.com"
-      path: /
-  tls: []            # e.g. [{ secretName: ovscode-tls, hosts: [openvscode.example.com] }]
-
-persistence:
-  enabled: true
-  existingClaim: ""  # if empty, chart will create PVC
-  size: 50Gi
-  accessModes:
-    - ReadWriteOnce
-  storageClassName: ""
-
-env:
-  # basic env vars for OpenVSCode server
-  OPENVSCODE_SERVER_PORT: "3000"
-  # Example auth token, normally override per tenant and load via Secret
-  PASSWORD_ENABLED: "true"
-
-secretEnv:
-  # These keys will be created as a Secret
-  # and also exposed to the pod as env vars
-  PASSWORD: "changeme"
-
-nodeSelector: {}
-tolerations: []
-affinity: {}
-
-hpa:
-  enabled: true
-  minReplicas: 1
-  maxReplicas: 5
-  targetCPUUtilizationPercentage: 75
-
+{{- define "openvscode-server.fullname" -}}
+{{- if .Values.fullnameOverride }}
+{{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" }}
+{{- else }}
+{{- $name := include "openvscode-server.name" . }}
+{{- if .Release.Name }}
+{{- printf "%s-%s" .Release.Name $name | trunc 63 | trimSuffix "-" }}
+{{- else }}
+{{- $name | trunc 63 | trimSuffix "-" }}
+{{- end }}
+{{- end }}
+{{- end }}
