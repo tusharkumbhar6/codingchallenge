@@ -1,34 +1,31 @@
-fullnameOverride: openvscode-tenant-a
-
-image:
-  repository: registry.internal.com/dev/openvscode-server
-  tag: "1.0.3"
-
-replicaCount: 2
-
-ingress:
-  enabled: true
-  className: nginx
-  hosts:
-    - host: openvscode-tenant-a.apps.company.com
-      path: /
-  tls:
-    - secretName: openvscode-tenant-a-tls
-      hosts:
-        - openvscode-tenant-a.apps.company.com
-
-persistence:
-  enabled: true
-  size: 100Gi
-  storageClassName: nfs-storage
-
-secretEnv:
-  PASSWORD: "super-secret-token"
-
-resources:
-  requests:
-    cpu: 500m
-    memory: 2Gi
-  limits:
-    cpu: 4
-    memory: 8Gi
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: openvscode-tenant-a
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: git@github.com:my-org/manifest.git
+    targetRevision: main
+    path: openvscode-server
+    helm:
+      valueFiles:
+        - $values/values.yaml      # refers to second source below
+  sources:
+    - repoURL: git@github.com:my-org/manifest.git
+      targetRevision: main
+      path: openvscode-server
+    - repoURL: git@github.com:my-org/platform.git
+      targetRevision: main
+      path: overlays/uat/tenantA/openvscode-server
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: tenant-a
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
