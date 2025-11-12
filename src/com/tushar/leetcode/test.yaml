@@ -1,20 +1,34 @@
-{{- if .Values.hpa.enabled }}
-apiVersion: autoscaling/v2
-kind: HorizontalPodAutoscaler
-metadata:
-  name: {{ include "openvscode-server.fullname" . }}
-spec:
-  scaleTargetRef:
-    apiVersion: apps/v1
-    kind: Deployment
-    name: {{ include "openvscode-server.fullname" . }}
-  minReplicas: {{ .Values.hpa.minReplicas }}
-  maxReplicas: {{ .Values.hpa.maxReplicas }}
-  metrics:
-    - type: Resource
-      resource:
-        name: cpu
-        target:
-          type: Utilization
-          averageUtilization: {{ .Values.hpa.targetCPUUtilizationPercentage }}
-{{- end }}
+fullnameOverride: openvscode-tenant-a
+
+image:
+  repository: registry.internal.com/dev/openvscode-server
+  tag: "1.0.3"
+
+replicaCount: 2
+
+ingress:
+  enabled: true
+  className: nginx
+  hosts:
+    - host: openvscode-tenant-a.apps.company.com
+      path: /
+  tls:
+    - secretName: openvscode-tenant-a-tls
+      hosts:
+        - openvscode-tenant-a.apps.company.com
+
+persistence:
+  enabled: true
+  size: 100Gi
+  storageClassName: nfs-storage
+
+secretEnv:
+  PASSWORD: "super-secret-token"
+
+resources:
+  requests:
+    cpu: 500m
+    memory: 2Gi
+  limits:
+    cpu: 4
+    memory: 8Gi
