@@ -1,12 +1,14 @@
+{{- if and .Values.persistence.enabled (not .Values.persistence.existingClaim) }}
 apiVersion: v1
-kind: ConfigMap
+kind: PersistentVolumeClaim
 metadata:
-  name: {{ include "openvscode-server.fullname" . }}-config
-data:
-  start.sh: |
-    #!/usr/bin/env bash
-    set -euo pipefail
-    # Add any per-tenant bootstrap here if needed
-    /usr/bin/openvscode-server \
-      --host 0.0.0.0 \
-      --port ${OPENVSCODE_SERVER_PORT:-3000}
+  name: {{ include "openvscode-server.fullname" . }}-data
+spec:
+  accessModes: {{ toYaml .Values.persistence.accessModes | nindent 2 }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.size }}
+  {{- if .Values.persistence.storageClassName }}
+  storageClassName: {{ .Values.persistence.storageClassName }}
+  {{- end }}
+{{- end }}
