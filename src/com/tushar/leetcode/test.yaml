@@ -1,13 +1,11 @@
-{{- if .Values.serviceAccount.create }}
+{{- if .Values.secretEnv }}
 apiVersion: v1
-kind: ServiceAccount
+kind: Secret
 metadata:
-  name: {{ default (include "openvscode-server.fullname" .) .Values.serviceAccount.name }}
-  labels:
-    app.kubernetes.io/name: {{ include "openvscode-server.name" . }}
-    app.kubernetes.io/instance: {{ .Release.Name }}
-  annotations:
-    {{- with .Values.serviceAccount.annotations }}
-    {{- toYaml . | nindent 4 }}
-    {{- end }}
+  name: {{ include "openvscode-server.fullname" . }}-env
+type: Opaque
+stringData:
+  {{- range $key, $value := .Values.secretEnv }}
+  {{ $key }}: "{{ $value }}"
+  {{- end }}
 {{- end }}
