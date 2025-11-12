@@ -1,11 +1,12 @@
-{{- if .Values.secretEnv }}
 apiVersion: v1
-kind: Secret
+kind: ConfigMap
 metadata:
-  name: {{ include "openvscode-server.fullname" . }}-env
-type: Opaque
-stringData:
-  {{- range $key, $value := .Values.secretEnv }}
-  {{ $key }}: "{{ $value }}"
-  {{- end }}
-{{- end }}
+  name: {{ include "openvscode-server.fullname" . }}-config
+data:
+  start.sh: |
+    #!/usr/bin/env bash
+    set -euo pipefail
+    # Add any per-tenant bootstrap here if needed
+    /usr/bin/openvscode-server \
+      --host 0.0.0.0 \
+      --port ${OPENVSCODE_SERVER_PORT:-3000}
