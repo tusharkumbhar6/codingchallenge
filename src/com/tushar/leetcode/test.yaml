@@ -1,34 +1,20 @@
-{{- if .Values.ingress.enabled }}
-apiVersion: networking.k8s.io/v1
-kind: Ingress
+{{- if .Values.hpa.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
 metadata:
   name: {{ include "openvscode-server.fullname" . }}
-  labels:
-    app.kubernetes.io/name: {{ include "openvscode-server.name" . }}
-    app.kubernetes.io/instance: {{ .Release.Name }}
-  annotations:
-    {{- with .Values.ingress.annotations }}
-    {{- toYaml . | nindent 4 }}
-    {{- end }}
 spec:
-  {{- if .Values.ingress.className }}
-  ingressClassName: {{ .Values.ingress.className }}
-  {{- end }}
-  rules:
-    {{- range .Values.ingress.hosts }}
-    - host: {{ .host }}
-      http:
-        paths:
-          - path: {{ .path | default "/" }}
-            pathType: Prefix
-            backend:
-              service:
-                name: {{ include "openvscode-server.fullname" $ }}
-                port:
-                  number: {{ $.Values.service.port }}
-    {{- end }}
-  {{- if .Values.ingress.tls }}
-  tls:
-    {{- toYaml .Values.ingress.tls | nindent 4 }}
-  {{- end }}
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "openvscode-server.fullname" . }}
+  minReplicas: {{ .Values.hpa.minReplicas }}
+  maxReplicas: {{ .Values.hpa.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.hpa.targetCPUUtilizationPercentage }}
 {{- end }}
