@@ -1,40 +1,6 @@
-{{- if .Values.secret }}
-{{- if .Values.secret.enabled }}
-apiVersion: v1
-kind: Secret
-metadata:
-  name: {{ include "openvscode-server.fullname" . }}-secret
-  namespace: {{ .Release.Namespace }}
-  labels:
-    {{- include "openvscode-server.labels" . | nindent 4 }}
-type: Opaque
-data:
-  {{- with .Values.secret.data }}
-  {{- range $key, $value := . }}
-  {{ $key }}: {{ $value | b64enc | quote }}
-  {{- end }}
-  {{- end }}
-{{- end }}
-{{- end }}
----
-{{- if .Values.openvscode }}
-{{- if .Values.openvscode.connectionTokenFromSecret }}
-{{- if .Values.openvscode.connectionTokenFromSecret.enabled }}
-apiVersion: v1
-kind: Secret
-metadata:
-  name: {{ .Values.openvscode.connectionTokenFromSecret.secretName }}
-  namespace: {{ .Release.Namespace }}
-  labels:
-    {{- include "openvscode-server.labels" . | nindent 4 }}
-type: Opaque
-data:
-  {{- if .Values.openvscode.connectionToken }}
-  {{ .Values.openvscode.connectionTokenFromSecret.key }}: {{ .Values.openvscode.connectionToken | b64enc | quote }}
-  {{- else }}
-  # Generate a random token if not provided
-  {{ .Values.openvscode.connectionTokenFromSecret.key }}: {{ randAlphaNum 32 | b64enc | quote }}
-  {{- end }}
-{{- end }}
-{{- end }}
-{{- end }}
+apiVersion: v2
+name: openvscode-server
+description: Helm chart for OpenVSCode Server per-tenant deployment
+type: application
+version: 0.1.0
+appVersion: "1.94.2"   # example – match your OpenVSCode version
