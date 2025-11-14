@@ -1,27 +1,59 @@
-def cron_to_row(cron_expr: str) -> str:
+def expand_weekday_field(weekday: str) -> str:
+    """
+    Convert a cron weekday field into a readable English string.
+    Supports:
+        "*"
+        "1"
+        "1,3,5"
+        "1-5"
+        "0-1,3-6"
+        "1,3-5,6"
+    """
     weekday_map = {
         "0": "Sunday", "1": "Monday", "2": "Tuesday",
         "3": "Wednesday", "4": "Thursday",
         "5": "Friday", "6": "Saturday", "7": "Sunday"
     }
 
+    # If "*"
+    if weekday == "*":
+        return "every"
+
+    readable_parts = []
+
+    # Split multiple tokens (list or mixed)
+    tokens = weekday.split(",")
+
+    for token in tokens:
+        token = token.strip()
+
+        # Range like "2-5"
+        if "-" in token:
+            start, end = token.split("-", 1)
+            start_name = weekday_map.get(start, start)
+            end_name = weekday_map.get(end, end)
+            readable_parts.append(f"{start_name} to {end_name}")
+
+        # Single day
+        else:
+            readable_parts.append(weekday_map.get(token, token))
+
+    # Join all readable parts
+    if len(readable_parts) == 1:
+        return f"Every {readable_parts[0]}"
+    else:
+        return "Every " + ", ".join(readable_parts)
+
+
+def cron_to_row(cron_expr: str) -> str:
     parts = cron_expr.split()
     if len(parts) != 5:
         return None  # skip invalid lines
 
     minute, hour, date, month, weekday = parts
 
-    # Convert weekday to readable text
-    if weekday == "*":
-        day_readable = "every"
-    else:
-        if "," in weekday:
-            day_readable = "Every " + ", ".join(weekday_map[w] for w in weekday.split(","))
-        elif "-" in weekday:
-            start, end = weekday.split("-")
-            day_readable = f"Every {weekday_map[start]} to {weekday_map[end]}"
-        else:
-            day_readable = f"Every {weekday_map.get(weekday, weekday)}"
+    # Get readable weekday text (supports *, list, range, mixes)
+    day_readable = expand_weekday_field(weekday)
 
     return f"{cron_expr}, {minute}, {hour}, {date}, {month}, {day_readable}"
 
@@ -29,8 +61,8 @@ def cron_to_row(cron_expr: str) -> str:
 # ----------------------------
 # Read cron expressions from file
 # ----------------------------
-input_file = "crons.txt"      # change as needed
-output_file = "cron_output.csv"  # optional output file
+input_file = "crons.txt"
+output_file = "cron_output.csv"
 
 print("cronschedule, min, hours, date, month, day")
 
@@ -39,7 +71,7 @@ with open(input_file, "r") as f:
     for line in f:
         cron = line.strip()
         if not cron:
-            continue  # skip empty lines
+            continue
 
         result = cron_to_row(cron)
         if result:
@@ -47,9 +79,11 @@ with open(input_file, "r") as f:
             rows.append(result)
 
 # ----------------------------
-# Optional: write output to CSV file
+# Write output CSV
 # ----------------------------
 with open(output_file, "w") as out:
     out.write("cronschedule, min, hours, date, month, day\n")
     for row in rows:
         out.write(row + "\n")
+
+print("\n✅ Output saved to:", output_file)
