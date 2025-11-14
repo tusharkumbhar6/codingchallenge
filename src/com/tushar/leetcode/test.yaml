@@ -1,31 +1,36 @@
-apiVersion: argoproj.io/v1alpha1
-kind: Application
-metadata:
-  name: openvscode-tenant-a
-  namespace: argocd
-spec:
-  project: default
-  source:
-    repoURL: git@github.com:my-org/manifest.git
-    targetRevision: main
-    path: openvscode-server
-    helm:
-      valueFiles:
-        - $values/values.yaml      # refers to second source below
-  sources:
-    - repoURL: git@github.com:my-org/manifest.git
-      targetRevision: main
-      path: openvscode-server
-    - repoURL: git@github.com:my-org/platform.git
-      targetRevision: main
-      path: overlays/uat/tenantA/openvscode-server
-      ref: values
-  destination:
-    server: https://kubernetes.default.svc
-    namespace: tenant-a
-  syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
-    syncOptions:
-      - CreateNamespace=true
+def cron_to_row(cron_expr: str) -> str:
+    # Mapping for weekdays (0 or 7 = Sunday, 1 = Monday, ...)
+    weekday_map = {
+        "0": "Sunday", "1": "Monday", "2": "Tuesday",
+        "3": "Wednesday", "4": "Thursday",
+        "5": "Friday", "6": "Saturday", "7": "Sunday"
+    }
+
+    parts = cron_expr.split()
+    if len(parts) != 5:
+        raise ValueError("Cron expression must have exactly 5 fields")
+
+    minute, hour, date, month, weekday = parts
+
+    # Convert weekday
+    if weekday == "*":
+        day_readable = "every"
+    else:
+        # Support lists like "1,3,5" or ranges "1-3"
+        if "," in weekday:
+            day_readable = "Every " + ", ".join(weekday_map[w] for w in weekday.split(","))
+        elif "-" in weekday:
+            start, end = weekday.split("-")
+            day_readable = f"Every {weekday_map[start]} to {weekday_map[end]}"
+        else:
+            day_readable = f"Every {weekday_map.get(weekday, weekday)}"
+
+    return f"{cron_expr}, {minute}, {hour}, {date}, {month}, {day_readable}"
+
+
+# ----------------------------
+# Examples
+# ----------------------------
+print("cronschedule, min, hours, date, month, day")
+print(cron_to_row("0 3 * * *"))
+print(cron_to_row("5 4 * * 1"))
