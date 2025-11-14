@@ -1,6 +1,8 @@
+from openpyxl import Workbook
+
 def expand_weekday_field(weekday: str) -> str:
     """
-    Convert a cron weekday field into a readable English string.
+    Convert a cron weekday field into readable English.
     Supports:
         "*"
         "1"
@@ -15,56 +17,45 @@ def expand_weekday_field(weekday: str) -> str:
         "5": "Friday", "6": "Saturday", "7": "Sunday"
     }
 
-    # If "*"
     if weekday == "*":
         return "every"
 
-    readable_parts = []
+    parts = []
 
-    # Split multiple tokens (list or mixed)
     tokens = weekday.split(",")
-
     for token in tokens:
         token = token.strip()
 
-        # Range like "2-5"
-        if "-" in token:
+        if "-" in token:  # range
             start, end = token.split("-", 1)
             start_name = weekday_map.get(start, start)
             end_name = weekday_map.get(end, end)
-            readable_parts.append(f"{start_name} to {end_name}")
+            parts.append(f"{start_name} to {end_name}")
+        else:  # single day
+            parts.append(weekday_map.get(token, token))
 
-        # Single day
-        else:
-            readable_parts.append(weekday_map.get(token, token))
-
-    # Join all readable parts
-    if len(readable_parts) == 1:
-        return f"Every {readable_parts[0]}"
+    if len(parts) == 1:
+        return f"Every {parts[0]}"
     else:
-        return "Every " + ", ".join(readable_parts)
+        return "Every " + ", ".join(parts)
 
 
-def cron_to_row(cron_expr: str) -> str:
+def cron_to_row(cron_expr: str):
     parts = cron_expr.split()
     if len(parts) != 5:
-        return None  # skip invalid lines
+        return None
 
     minute, hour, date, month, weekday = parts
+    readable_day = expand_weekday_field(weekday)
 
-    # Get readable weekday text (supports *, list, range, mixes)
-    day_readable = expand_weekday_field(weekday)
-
-    return f"{cron_expr}, {minute}, {hour}, {date}, {month}, {day_readable}"
+    return [cron_expr, minute, hour, date, month, readable_day]
 
 
-# ----------------------------
-# Read cron expressions from file
-# ----------------------------
+# ----------------------------------------
+# Read input file
+# ----------------------------------------
 input_file = "crons.txt"
-output_file = "cron_output.csv"
-
-print("cronschedule, min, hours, date, month, day")
+output_excel = "cron_output.xlsx"
 
 rows = []
 with open(input_file, "r") as f:
@@ -73,17 +64,25 @@ with open(input_file, "r") as f:
         if not cron:
             continue
 
-        result = cron_to_row(cron)
-        if result:
-            print(result)
-            rows.append(result)
+        parsed = cron_to_row(cron)
+        if parsed:
+            rows.append(parsed)
 
-# ----------------------------
-# Write output CSV
-# ----------------------------
-with open(output_file, "w") as out:
-    out.write("cronschedule, min, hours, date, month, day\n")
-    for row in rows:
-        out.write(row + "\n")
 
-print("\n✅ Output saved to:", output_file)
+# ----------------------------------------
+# Write to Excel
+# ----------------------------------------
+wb = Workbook()
+ws = wb.active
+ws.title = "Cron Output"
+
+# Header row
+ws.append(["cronschedule", "min", "hour", "date", "month", "day"])
+
+# Data rows
+for row in rows:
+    ws.append(row)
+
+wb.save(output_excel)
+
+print("\n✅ Excel file saved as:", output_excel)
