@@ -1,5 +1,4 @@
 def cron_to_row(cron_expr: str) -> str:
-    # Mapping for weekdays (0 or 7 = Sunday, 1 = Monday, ...)
     weekday_map = {
         "0": "Sunday", "1": "Monday", "2": "Tuesday",
         "3": "Wednesday", "4": "Thursday",
@@ -8,15 +7,14 @@ def cron_to_row(cron_expr: str) -> str:
 
     parts = cron_expr.split()
     if len(parts) != 5:
-        raise ValueError("Cron expression must have exactly 5 fields")
+        return None  # skip invalid lines
 
     minute, hour, date, month, weekday = parts
 
-    # Convert weekday
+    # Convert weekday to readable text
     if weekday == "*":
         day_readable = "every"
     else:
-        # Support lists like "1,3,5" or ranges "1-3"
         if "," in weekday:
             day_readable = "Every " + ", ".join(weekday_map[w] for w in weekday.split(","))
         elif "-" in weekday:
@@ -29,8 +27,29 @@ def cron_to_row(cron_expr: str) -> str:
 
 
 # ----------------------------
-# Examples
+# Read cron expressions from file
 # ----------------------------
+input_file = "crons.txt"      # change as needed
+output_file = "cron_output.csv"  # optional output file
+
 print("cronschedule, min, hours, date, month, day")
-print(cron_to_row("0 3 * * *"))
-print(cron_to_row("5 4 * * 1"))
+
+rows = []
+with open(input_file, "r") as f:
+    for line in f:
+        cron = line.strip()
+        if not cron:
+            continue  # skip empty lines
+
+        result = cron_to_row(cron)
+        if result:
+            print(result)
+            rows.append(result)
+
+# ----------------------------
+# Optional: write output to CSV file
+# ----------------------------
+with open(output_file, "w") as out:
+    out.write("cronschedule, min, hours, date, month, day\n")
+    for row in rows:
+        out.write(row + "\n")
