@@ -1,88 +1,85 @@
-from openpyxl import Workbook
+from ldap3 import Server, Connection, ALL, NTLM, SUBTREE
 
-def expand_weekday_field(weekday: str) -> str:
-    """
-    Convert a cron weekday field into readable English.
-    Supports:
-        "*"
-        "1"
-        "1,3,5"
-        "1-5"
-        "0-1,3-6"
-        "1,3-5,6"
-    """
-    weekday_map = {
-        "0": "Sunday", "1": "Monday", "2": "Tuesday",
-        "3": "Wednesday", "4": "Thursday",
-        "5": "Friday", "6": "Saturday", "7": "Sunday"
-    }
+# LDAP server config
+server = Server("ldap://your-ldap-host", get_info=ALL)
 
-    if weekday == "*":
-        return "every"
+conn = Connection(
+    server,
+    user="DOMAIN\\username",
+    password="your_password",
+    authentication=NTLM,
+    auto_bind=True
+)
 
-    parts = []
+# OU to search groups
+ou_dn = "OU=AXTXCN,OU=APPS,DC=reg1,DC=org,DC=my_company,DC=com"
 
-    tokens = weekday.split(",")
-    for token in tokens:
-        token = token.strip()
+# Search filter: security-enabled groups
+search_filter = "(&(objectClass=group)(groupType:1.2.840.113556.1.4.803:=2147483648))"
 
-        if "-" in token:  # range
-            start, end = token.split("-", 1)
-            start_name = weekday_map.get(start, start)
-            end_name = weekday_map.get(end, end)
-            parts.append(f"{start_name} to {end_name}")
-        else:  # single day
-            parts.append(weekday_map.get(token, token))
+# 1️⃣ Search for groups
+conn.search(
+    search_base=ou_dn,
+    search_filter=search_filter,
+    search_scope=SUBTREE,
+    attributes=["cn", "member"]
+)
 
-    if len(parts) == 1:
-        return f"Every {parts[0]}"
-    else:
-        return "Every " + ", ".join(parts)
+groups = conn.entries
+
+# Helper function: get LDAP attribute safely
+def attr(entry, name):
+    return str(getattr(entry, name, ""))
 
 
-def cron_to_row(cron_expr: str):
-    parts = cron_expr.split()
-    if len(parts) != 5:
-        return None
+# 2️⃣ Loop through all groups and fetch member details
+for group in groups:
+    group_name = attr(group, "cn")
 
-    minute, hour, date, month, weekday = parts
-    readable_day = expand_weekday_field(weekday)
+    print(f"\n===== GROUP: {group_name} =====")
+    
+    # No members?
+    if not group.member:
+        print("No members.")
+        continue
 
-    return [cron_expr, minute, hour, date, month, readable_day]
+    for member_dn in group.member.values:
+        
+        # 3️⃣ Search user entry
+        conn.search(
+            search_base=member_dn,
+            search_filter="(objectClass=user)",
+            search_scope=SUBTREE,
+            attributes=[
+                "sAMAccountName",
+                "displayName",
+                "department",
+                "co",
+                "manager",
+                "name"
+            ]
+        )
 
-
-# ----------------------------------------
-# Read input file
-# ----------------------------------------
-input_file = "crons.txt"
-output_excel = "cron_output.xlsx"
-
-rows = []
-with open(input_file, "r") as f:
-    for line in f:
-        cron = line.strip()
-        if not cron:
+        if not conn.entries:
             continue
+        
+        user = conn.entries[0]
 
-        parsed = cron_to_row(cron)
-        if parsed:
-            rows.append(parsed)
+        # Extract fields
+        sam = attr(user, "sAMAccountName")
+        display = attr(user, "displayName")
+        dept = attr(user, "department")
+        country = attr(user, "co")
+        name = attr(user, "name")
 
+        # 4️⃣ Resolve manager CN
+        manager_cn = ""
+        if user.manager:
+            manager_dn = str(user.manager)
+            if conn.search(manager_dn, "(objectClass=user)", SUBTREE, attributes=["cn"]):
+                manager_cn = attr(conn.entries[0], "cn")
 
-# ----------------------------------------
-# Write to Excel
-# ----------------------------------------
-wb = Workbook()
-ws = wb.active
-ws.title = "Cron Output"
-
-# Header row
-ws.append(["cronschedule", "min", "hour", "date", "month", "day"])
-
-# Data rows
-for row in rows:
-    ws.append(row)
-
-wb.save(output_excel)
-
-print("\n✅ Excel file saved as:", output_excel)
+        # Print result row
+        print(
+            f"{group_name} | {sam} | {display} | {dept} | {country} | {manager_cn} | {name}"
+        )
