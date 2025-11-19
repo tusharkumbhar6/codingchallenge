@@ -1,85 +1,16 @@
-from ldap3 import Server, Connection, ALL, NTLM, SUBTREE
+import csv
 
-# LDAP server config
-server = Server("ldap://your-ldap-host", get_info=ALL)
+data = [
+    {"name": "Alice", "age": 30, "city": "New York"},
+    {"name": "Bob", "age": 24, "city": "London"},
+    {"name": "Charlie", "age": 35, "city": "Paris"},
+]
 
-conn = Connection(
-    server,
-    user="DOMAIN\\username",
-    password="your_password",
-    authentication=NTLM,
-    auto_bind=True
-)
+fieldnames = ["name", "age", "city"]
 
-# OU to search groups
-ou_dn = "OU=AXTXCN,OU=APPS,DC=reg1,DC=org,DC=my_company,DC=com"
+with open("people.csv", "w", newline="") as csvfile:
+    writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+    writer.writeheader()
+    writer.writerows(data)
 
-# Search filter: security-enabled groups
-search_filter = "(&(objectClass=group)(groupType:1.2.840.113556.1.4.803:=2147483648))"
-
-# 1️⃣ Search for groups
-conn.search(
-    search_base=ou_dn,
-    search_filter=search_filter,
-    search_scope=SUBTREE,
-    attributes=["cn", "member"]
-)
-
-groups = conn.entries
-
-# Helper function: get LDAP attribute safely
-def attr(entry, name):
-    return str(getattr(entry, name, ""))
-
-
-# 2️⃣ Loop through all groups and fetch member details
-for group in groups:
-    group_name = attr(group, "cn")
-
-    print(f"\n===== GROUP: {group_name} =====")
-    
-    # No members?
-    if not group.member:
-        print("No members.")
-        continue
-
-    for member_dn in group.member.values:
-        
-        # 3️⃣ Search user entry
-        conn.search(
-            search_base=member_dn,
-            search_filter="(objectClass=user)",
-            search_scope=SUBTREE,
-            attributes=[
-                "sAMAccountName",
-                "displayName",
-                "department",
-                "co",
-                "manager",
-                "name"
-            ]
-        )
-
-        if not conn.entries:
-            continue
-        
-        user = conn.entries[0]
-
-        # Extract fields
-        sam = attr(user, "sAMAccountName")
-        display = attr(user, "displayName")
-        dept = attr(user, "department")
-        country = attr(user, "co")
-        name = attr(user, "name")
-
-        # 4️⃣ Resolve manager CN
-        manager_cn = ""
-        if user.manager:
-            manager_dn = str(user.manager)
-            if conn.search(manager_dn, "(objectClass=user)", SUBTREE, attributes=["cn"]):
-                manager_cn = attr(conn.entries[0], "cn")
-
-        # Print result row
-        print(
-            f"{group_name} | {sam} | {display} | {dept} | {country} | {manager_cn} | {name}"
-        )
+print("CSV file 'people.csv' created successfully.")
