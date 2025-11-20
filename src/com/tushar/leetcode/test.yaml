@@ -1,16 +1,211 @@
+"""
+util.py
+Production-ready LDAP utility for exporting group members into CSV.
+Author: <Your Name>
+"""
+
 import csv
+import logging
+from typing import List, Dict
+from ldap3 import Server, Connection, NTLM, SUBTREE, ALL
 
-data = [
-    {"name": "Alice", "age": 30, "city": "New York"},
-    {"name": "Bob", "age": 24, "city": "London"},
-    {"name": "Charlie", "age": 35, "city": "Paris"},
-]
+# ---------------------------------------------------------------
+# Logging Configuration
+# ---------------------------------------------------------------
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s"
+)
 
-fieldnames = ["name", "age", "city"]
+logger = logging.getLogger(__name__)
 
-with open("people.csv", "w", newline="") as csvfile:
-    writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-    writer.writeheader()
-    writer.writerows(data)
 
-print("CSV file 'people.csv' created successfully.")
+# ---------------------------------------------------------------
+# Helper Functions
+# ---------------------------------------------------------------
+def safe_attr(entry, name: str) -> str:
+    """
+    Safely extract an attribute from LDAP entry.
+    Handles None, multi-value lists, and conversion to string.
+    """
+    try:
+        value = getattr(entry, name, None)
+        if not value:
+            return ""
+
+        if hasattr(value, "value"):
+            val = value.value
+            if isinstance(val, list):               # multi-value attribute
+                return ";".join(str(v) for v in val)
+            return str(val)
+
+        return str(value)
+
+    except Exception as e:
+        logger.warning(f"Failed to parse attribute '{name}': {e}")
+        return ""
+
+
+# ---------------------------------------------------------------
+# LDAP Client Class
+# ---------------------------------------------------------------
+class LDAPClient:
+    """
+    Reusable LDAP client for querying groups and users.
+    """
+
+    def __init__(self, server_url: str, user: str, password: str):
+        """
+        Initialize LDAP connection.
+        """
+        logger.info("Initializing LDAP connection...")
+
+        self.server = Server(server_url, get_info=ALL)
+
+        self.conn = Connection(
+            self.server,
+            user=user,
+            password=password,
+            authentication=NTLM,
+            auto_bind=True
+        )
+
+        logger.info("LDAP connection established successfully.")
+
+    # -----------------------------------------------------------
+
+    def get_groups(self, ou_dn: str) -> List:
+        """
+        Retrieve all security-enabled groups under an OU.
+        """
+        logger.info(f"Searching groups under OU: {ou_dn}")
+
+        search_filter = "(&(objectClass=group)(groupType:1.2.840.113556.1.4.803:=2147483648))"
+
+        self.conn.search(
+            search_base=ou_dn,
+            search_filter=search_filter,
+            search_scope=SUBTREE,
+            attributes=["cn", "member"]
+        )
+
+        logger.info(f"Groups found: {len(self.conn.entries)}")
+        return self.conn.entries
+
+    # -----------------------------------------------------------
+
+    def get_user_details(self, user_dn: str) -> Dict[str, str]:
+        """
+        Retrieve user fields from LDAP.
+        """
+        self.conn.search(
+            search_base=user_dn,
+            search_filter="(objectClass=user)",
+            search_scope=SUBTREE,
+            attributes=[
+                "sAMAccountName",
+                "displayName",
+                "department",
+                "co",
+                "manager",
+                "name"
+            ]
+        )
+
+        if not self.conn.entries:
+            logger.warning(f"No user found: {user_dn}")
+            return {}
+
+        user = self.conn.entries[0]
+
+        # Extract user attributes
+        return {
+            "sAMAccountName": safe_attr(user, "sAMAccountName"),
+            "displayName": safe_attr(user, "displayName"),
+            "department": safe_attr(user, "department"),
+            "country": safe_attr(user, "co"),
+            "manager_dn": safe_attr(user, "manager"),
+            "name": safe_attr(user, "name")
+        }
+
+    # -----------------------------------------------------------
+
+    def resolve_manager_cn(self, manager_dn: str) -> str:
+        """
+        Resolve manager DN → CN.
+        """
+        if not manager_dn:
+            return ""
+
+        self.conn.search(
+            search_base=manager_dn,
+            search_filter="(objectClass=user)",
+            search_scope=SUBTREE,
+            attributes=["cn"]
+        )
+
+        if not self.conn.entries:
+            return ""
+
+        return safe_attr(self.conn.entries[0], "cn")
+
+    # -----------------------------------------------------------
+
+    def export_group_members(self, ou_dn: str, csv_file: str):
+        """
+        Export all group members under the given OU to a CSV file.
+        """
+
+        logger.info("Starting group member extraction...")
+
+        groups = self.get_groups(ou_dn)
+        rows = []
+
+        for group in groups:
+            group_name = safe_attr(group, "cn")
+
+            # Gather member DNs
+            members = []
+            if hasattr(group, "member") and group.member:
+                members = list(group.member.values)
+
+            for member_dn in members:
+
+                user_info = self.get_user_details(member_dn)
+                if not user_info:
+                    continue
+
+                # Resolve manager CN
+                manager_cn = ""
+                if user_info.get("manager_dn"):
+                    manager_cn = self.resolve_manager_cn(user_info["manager_dn"])
+
+                rows.append({
+                    "GroupName": group_name,
+                    "sAMAccountName": user_info["sAMAccountName"],
+                    "displayName": user_info["displayName"],
+                    "department": user_info["department"],
+                    "country": user_info["country"],
+                    "manager_CN": manager_cn,
+                    "name": user_info["name"]
+                })
+
+        # -------------------------------------------------------
+        # Write CSV output
+        # -------------------------------------------------------
+        fieldnames = [
+            "GroupName",
+            "sAMAccountName",
+            "displayName",
+            "department",
+            "country",
+            "manager_CN",
+            "name"
+        ]
+
+        with open(csv_file, "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(rows)
+
+        logger.info(f"CSV successfully created: {csv_file}")
