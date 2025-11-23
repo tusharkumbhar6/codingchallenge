@@ -1,24 +1,23 @@
-def test_owner_fields(conn, base_dn, owner_dn, owner_name):
-    possible_fields = [
-        "managedBy", "owner",
-        "extensionAttribute1", "extensionAttribute2", "extensionAttribute3",
-        "extensionAttribute4", "extensionAttribute5",
-        "info", "description"
-    ]
+from ldap3 import Server, Connection, NTLM, SUBTREE, ALL
 
-    for field in possible_fields:
-        print(f"\nTesting: {field}")
-        conn.search(
-            search_base=base_dn,
-            search_filter=f"(&(objectClass=user)({field}={owner_dn}))",
-            attributes=["sAMAccountName", "displayName"],
-        )
-        print("Count:", len(conn.entries))
+server = Server("ldap://YOUR_SERVER", get_info=ALL)
+conn = Connection(server, user="DOMAIN\\bindUser", password="xxxx", authentication=NTLM)
+conn.bind()
 
-        # Also try matching by owner name (string match)
-        conn.search(
-            search_base=base_dn,
-            search_filter=f"(&(objectClass=user)({field}=*{owner_name}*))",
-            attributes=["sAMAccountName", "displayName"],
-        )
-        print("Count (by name match):", len(conn.entries))
+base_dn = "DC=reg1,DC=org,DC=my_company,DC=com"
+fid = "YOUR_FID_HERE"   # Example: fid_xyz
+
+# Query the Functional ID
+conn.search(
+    search_base=base_dn,
+    search_filter=f"(&(objectClass=user)(sAMAccountName={fid}))",
+    search_scope=SUBTREE,
+    attributes="*"
+)
+
+entry = conn.entries[0]
+
+# Print each attribute in clean format
+for attr in entry.entry_attributes:
+    value = entry[attr].value
+    print(f"{attr}: {value if value else 'NULL'}")
