@@ -1,1 +1,24 @@
-#test
+def test_owner_fields(conn, base_dn, owner_dn, owner_name):
+    possible_fields = [
+        "managedBy", "owner",
+        "extensionAttribute1", "extensionAttribute2", "extensionAttribute3",
+        "extensionAttribute4", "extensionAttribute5",
+        "info", "description"
+    ]
+
+    for field in possible_fields:
+        print(f"\nTesting: {field}")
+        conn.search(
+            search_base=base_dn,
+            search_filter=f"(&(objectClass=user)({field}={owner_dn}))",
+            attributes=["sAMAccountName", "displayName"],
+        )
+        print("Count:", len(conn.entries))
+
+        # Also try matching by owner name (string match)
+        conn.search(
+            search_base=base_dn,
+            search_filter=f"(&(objectClass=user)({field}=*{owner_name}*))",
+            attributes=["sAMAccountName", "displayName"],
+        )
+        print("Count (by name match):", len(conn.entries))
