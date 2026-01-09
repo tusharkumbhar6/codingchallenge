@@ -1,23 +1,76 @@
-from ldap3 import Server, Connection, NTLM, SUBTREE, ALL
-
-server = Server("ldap://YOUR_SERVER", get_info=ALL)
-conn = Connection(server, user="DOMAIN\\bindUser", password="xxxx", authentication=NTLM)
-conn.bind()
-
-base_dn = "DC=reg1,DC=org,DC=my_company,DC=com"
-fid = "YOUR_FID_HERE"   # Example: fid_xyz
-
-# Query the Functional ID
-conn.search(
-    search_base=base_dn,
-    search_filter=f"(&(objectClass=user)(sAMAccountName={fid}))",
-    search_scope=SUBTREE,
-    attributes="*"
+WITH fields AS (
+  SELECT
+    cron,
+    regexp_split_to_array(btrim(cron), '\s+') AS p
+  FROM schedule
+),
+valid AS (
+  SELECT
+    cron,
+    p[1] AS minute,
+    p[2] AS hour,
+    p[3] AS date,
+    p[4] AS month,
+    p[5] AS weekday
+  FROM fields
+  WHERE array_length(p, 1) = 5
+),
+tokens AS (
+  SELECT
+    v.*,
+    t.token,
+    t.ord
+  FROM valid v
+  CROSS JOIN LATERAL unnest(string_to_array(v.weekday, ',')) WITH ORDINALITY AS t(token, ord)
+  WHERE v.weekday <> '*'
+),
+token_readable AS (
+  SELECT
+    cron, minute, hour, date, month, weekday, ord,
+    CASE
+      WHEN position('-' IN btrim(token)) > 0 THEN
+        (
+          CASE split_part(btrim(token), '-', 1)
+            WHEN '0' THEN 'Sunday' WHEN '1' THEN 'Monday' WHEN '2' THEN 'Tuesday'
+            WHEN '3' THEN 'Wednesday' WHEN '4' THEN 'Thursday' WHEN '5' THEN 'Friday'
+            WHEN '6' THEN 'Saturday' WHEN '7' THEN 'Sunday'
+            ELSE split_part(btrim(token), '-', 1)
+          END
+          || ' to ' ||
+          CASE split_part(btrim(token), '-', 2)
+            WHEN '0' THEN 'Sunday' WHEN '1' THEN 'Monday' WHEN '2' THEN 'Tuesday'
+            WHEN '3' THEN 'Wednesday' WHEN '4' THEN 'Thursday' WHEN '5' THEN 'Friday'
+            WHEN '6' THEN 'Saturday' WHEN '7' THEN 'Sunday'
+            ELSE split_part(btrim(token), '-', 2)
+          END
+        )
+      ELSE
+        CASE btrim(token)
+          WHEN '0' THEN 'Sunday' WHEN '1' THEN 'Monday' WHEN '2' THEN 'Tuesday'
+          WHEN '3' THEN 'Wednesday' WHEN '4' THEN 'Thursday' WHEN '5' THEN 'Friday'
+          WHEN '6' THEN 'Saturday' WHEN '7' THEN 'Sunday'
+          ELSE btrim(token)
+        END
+    END AS token_text
+  FROM tokens
+),
+agg AS (
+  SELECT
+    cron, minute, hour, date, month,
+    'Every ' || string_agg(token_text, ', ' ORDER BY ord) AS day_text
+  FROM token_readable
+  GROUP BY cron, minute, hour, date, month
 )
-
-entry = conn.entries[0]
-
-# Print each attribute in clean format
-for attr in entry.entry_attributes:
-    value = entry[attr].value
-    print(f"{attr}: {value if value else 'NULL'}")
+SELECT
+  v.cron AS cronschedule,
+  v.minute    AS min,
+  v.hour      AS hour,
+  v.date      AS date,
+  v.month     AS month,
+  CASE
+    WHEN v.weekday = '*' THEN 'every'
+    ELSE a.day_text
+  END AS day
+FROM valid v
+LEFT JOIN agg a USING (cron, minute, hour, date, month)
+ORDER BY cronschedule;
