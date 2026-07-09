@@ -1,50 +1,60 @@
 #!/bin/bash
-#
-# Watches for cronJob.sh starting, then logs full CPU/Mem/Disk/ctxswitch
-# stats for it and its children (main.py, send2cm.py) until it exits.
 
-TARGET_PATTERN="cronJob.sh"
-LOGDIR="/home/youruser/logs"
-POLL_INTERVAL=0.3
-SAMPLE_INTERVAL=1
+LOG_DIR="/data/project/logs/performance"
+mkdir -p "$LOG_DIR"
 
-mkdir -p "$LOGDIR"
+TS=$(date +"%Y%m%d_%H%M%S")
+RUN_LOG="$LOG_DIR/run_${TS}.log"
+PIDSTAT_LOG="$LOG_DIR/pidstat_${TS}.log"
+TIME_LOG="$LOG_DIR/time_${TS}.log"
+SAR_LOG="$LOG_DIR/server_${TS}.log"
 
-echo "[$(date)] Watching for '$TARGET_PATTERN'..."
+echo "Job started at: $(date)" >> "$RUN_LOG"
 
-while true; do
-    JOB_PID=$(pgrep -f "$TARGET_PATTERN" | grep -v "^$$" | head -n1)
+# Monitor full server CPU/memory while job is running
+sar -u -r 1 >> "$SAR_LOG" 2>&1 &
+SAR_PID=$!
 
-    if [ -n "$JOB_PID" ]; then
-        TS=$(date +'%Y%m%d_%H%M%S')
-        LOGFILE="$LOGDIR/pidstat_${TS}.log"
-        echo "[$(date)] Detected job (root PID $JOB_PID). Logging -> $LOGFILE"
+run_and_monitor() {
+    JOB_NAME="$1"
+    shift
 
-        {
-            echo "=== Monitoring started $(date), root PID=$JOB_PID ==="
-            echo "--- SELF (cronJob.sh) + ALL child processes, sampled every ${SAMPLE_INTERVAL}s ---"
+    echo "Starting $JOB_NAME at: $(date)" >> "$RUN_LOG"
 
-            # -T ALL = parent's own stats AND children's stats, in one stream
-            pidstat -p "$JOB_PID" -T ALL -u -r -d -w -l "$SAMPLE_INTERVAL" \
-                > /tmp/pidstat_$$.out 2>&1 &
-            PIDSTAT_PID=$!
+    # Start actual command in background
+    /usr/bin/time -v "$@" >> "$RUN_LOG" 2>> "$TIME_LOG" &
+    JOB_PID=$!
 
-            wait "$JOB_PID" 2>/dev/null
-            # process may not be our child, so poll instead of wait if that fails
-            while kill -0 "$JOB_PID" 2>/dev/null; do
-                sleep 0.2
-            done
+    echo "$JOB_NAME PID: $JOB_PID" >> "$RUN_LOG"
 
-            kill "$PIDSTAT_PID" 2>/dev/null
-            cat /tmp/pidstat_$$.out
-            rm -f /tmp/pidstat_$$.out
+    # Monitor CPU, memory, disk I/O, context switch every 1 second
+    pidstat -p "$JOB_PID" -u -r -d -w -l 1 >> "$PIDSTAT_LOG" 2>&1 &
+    MON_PID=$!
 
-            echo "=== Monitoring finished $(date) ==="
-        } >> "$LOGFILE"
+    wait "$JOB_PID"
+    EXIT_CODE=$?
 
-        echo "[$(date)] Job finished. Resuming watch..."
-        sleep 2
-    fi
+    kill "$MON_PID" 2>/dev/null
+    wait "$MON_PID" 2>/dev/null
 
-    sleep "$POLL_INTERVAL"
-done
+    echo "$JOB_NAME finished at: $(date) with exit code: $EXIT_CODE" >> "$RUN_LOG"
+
+    return "$EXIT_CODE"
+}
+
+run_and_monitor "main.py" python3 /path/to/main.py
+MAIN_EXIT=$?
+
+run_and_monitor "send2cm.py" python3 /path/to/send2cm.py
+SEND_EXIT=$?
+
+kill "$SAR_PID" 2>/dev/null
+wait "$SAR_PID" 2>/dev/null
+
+echo "Job completed at: $(date)" >> "$RUN_LOG"
+
+if [ "$MAIN_EXIT" -ne 0 ] || [ "$SEND_EXIT" -ne 0 ]; then
+    exit 1
+fi
+
+exit 0
